@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>/비트/외래 통계 자동 계산 도구</title>
+  <title>/비트/ETC.기타통계</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
@@ -16,7 +16,7 @@
   </style>
 </head>
 <body>
-  <h1>/비트/외래 통계 자동 계산기</h1>
+  <h1>/비트/ETC.기타통계</h1>
 
   <div class="input-section">
     <label>✔️ 특정 키워드(예: PT만)를 입력하세요:</label><br>
@@ -56,7 +56,8 @@
     });
 
     function getAgeGroup(ageStr) {
-      const age = parseInt(ageStr);
+      const match = ageStr.match(/(\d+)세/);
+      const age = match ? parseInt(match[1]) : NaN;
       if (isNaN(age)) return "미확인";
       if (age <= 19) return "0~10대";
       if (age <= 29) return "20대";
@@ -67,7 +68,12 @@
     }
 
     function process(rawData, keyword) {
-      const headerRowIndex = rawData.findIndex(row => row.join('').includes("초/재") || row.join('').includes("챠트번호") || row.join('').includes("진료과") || row.join('').includes("마취"));
+      const headerRowIndex = rawData.findIndex(row =>
+        row.join('').includes("초/재") ||
+        row.join('').includes("챠트번호") ||
+        row.join('').includes("진료과") ||
+        row.join('').includes("마취")
+      );
       if (headerRowIndex === -1) {
         document.getElementById('warning').innerText = '❗ 유효한 열 이름을 찾을 수 없습니다.';
         return;
@@ -89,7 +95,7 @@
         else if (lname.includes("마취")) headerMap['마취'] = h;
         else if ((lname.includes("진료") && lname.includes("과")) || lname.includes("과목")) headerMap['진료과'] = h;
         else if (lname.includes("메모")) headerMap['접수메모'] = h;
-        else if (lname.includes("나이") || lname.includes("연령") || lname.includes("생년")) headerMap['연령'] = h;
+        else if (lname.includes("s/a")) headerMap['연령'] = h;
       });
 
       const 필수 = ['초재', '챠트번호', '마취', '진료과'];
