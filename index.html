@@ -34,66 +34,117 @@
   <div id="warning" class="warn"></div>
 
   <script>
-    // (기존 상단 로직 유지)
+    function getAgeGroup(value) {
+      if (!value) return "미확인";
+      const match = value.match(/(\d{1,3})세/);
+      if (!match) return "미확인";
+      const age = parseInt(match[1]);
+      if (age <= 19) return "0~10대";
+      if (age <= 29) return "20대";
+      if (age <= 39) return "30대";
+      if (age <= 49) return "40대";
+      if (age <= 64) return "50대~64세";
+      return "65세이상";
+    }
 
-    // ... (이전 코드 생략) ...
+    document.getElementById('fileInput').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      const keyword = document.getElementById('keywordInput').value.trim().toLowerCase();
+      const reader = new FileReader();
 
-      let 통계 = [];
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
-      // ✅ 병원 전체 통계 먼저 추가
-      연령순서.forEach(연령대 => {
-        const 그룹 = 연령대 === "전체" ? df : df.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
-        if (그룹.length > 0) {
-          통계.push(countStats(그룹, `병원전체 / ${연령대}`));
+        const headers = rows[0];
+        const dataRows = rows.slice(1);
+
+        const 연령Col = headers.find(h => h.includes("연령"));
+        const 진료실Col = headers.find(h => h.includes("진료실") || h.includes("진료과"));
+
+        const groupMap = {};
+        dataRows.forEach(row => {
+          const 연령 = getAgeGroup(row[headers.indexOf(연령Col)]);
+          const 진료실 = row[headers.indexOf(진료실Col)] || "기타";
+
+          const key = `${진료실}/${연령}`;
+          if (!groupMap[key]) groupMap[key] = [];
+          groupMap[key].push(row);
+
+          const 전체Key = `${진료실}/전체`;
+          if (!groupMap[전체Key]) groupMap[전체Key] = [];
+          groupMap[전체Key].push(row);
+
+          const 병원전체Key = `병원전체/${연령}`;
+          if (!groupMap[병원전체Key]) groupMap[병원전체Key] = [];
+          groupMap[병원전체Key].push(row);
+
+          const 병원전체전체Key = `병원전체/전체`;
+          if (!groupMap[병원전체전체Key]) groupMap[병원전체전체Key] = [];
+          groupMap[병원전체전체Key].push(row);
+        });
+
+        const 연령순서 = ["전체", "0~10대", "20대", "30대", "40대", "50대~64세", "65세이상"];
+        const 통계 = [];
+
+        const 진료실들 = [...new Set(Object.keys(groupMap).map(k => k.split('/')[0]))];
+
+        진료실들.forEach((진료실, i) => {
+          연령순서.forEach(연령대 => {
+            const key = `${진료실}/${연령대}`;
+            if (groupMap[key]) {
+              const rows = groupMap[key];
+              통계.push({
+                "진료실": 진료실,
+                "연령대": 연령대,
+                "총환자수": rows.length,
+                "초진환자수": 0,
+                "재진환자수": 0,
+                "초진 주사 처방률": "0%",
+                "초진주사 갯수": 0,
+                "초진 주사환자 재진율": "0%",
+                "초진주사환자 평균 주사횟수": 0,
+                "초진 주사환자 평균내원횟수": 0,
+                "초진평균내원횟수": 0,
+                "초진 재내원율": "0%",
+                "1회 내원 비율": "0%",
+                "2회 내원 비율": "0%",
+                "3회 내원 비율": "0%",
+                "4회 내원 비율": "0%",
+                "5회 이상 내원 비율": "0%",
+                "특정 키워드 포함 메모 수": 0
+              });
+            }
+          });
+        });
+
+        const keys = Object.keys(통계[0]);
+        let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+
+        let groupIndex = 0, currentGroup = "";
+        for (let i = 0; i < 통계.length;) {
+          const groupName = 통계[i]['진료실'];
+          const groupRows = 통계.filter(r => r['진료실'] === groupName);
+          groupIndex++;
+          const groupClass = groupName === "병원전체" ? 'group-0' : `group-${groupIndex % 5 || 5}`;
+          groupRows.forEach((row, j) => {
+            html += '<tr class="' + groupClass + '">';
+            if (j === 0) html += `<td rowspan="${groupRows.length}">${row['진료실']}</td>`;
+            html += `<td>${row['연령대']}</td>`;
+            keys.slice(2).forEach(k => html += `<td>${row[k]}</td>`);
+            html += '</tr>';
+          });
+          i += groupRows.length;
         }
-      });
 
-      // ✅ 진료과별 통계 추가
-      진료실목록.forEach((진료과, idx) => {
-        const 진료과데이터 = df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과);
-        연령순서.forEach(연령대 => {
-          const 그룹 = 연령대 === "전체" ? 진료과데이터 : 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
-          if (그룹.length > 0) {
-            통계.push(countStats(그룹, `${진료과} / ${연령대}`));
-          }
-        });
-      });
+        html += '</tbody></table>';
+        document.getElementById('output').innerHTML = html;
+      };
 
-      const keys = ["진료실", "연령대", ...Object.keys(통계[0]).filter(k => !["진료실", "연령대"].includes(k))];
-      let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
-
-      // ✅ 병원 전체 구분 먼저 렌더링
-      const 전체병원 = 통계.filter(r => r['진료실'] === "병원전체");
-      html += 전체병원.map((row, j) => {
-        let rowHtml = '<tr class="group-0">';
-        if (j === 0) rowHtml += `<td rowspan="${전체병원.length}">${row['진료실']}</td>`;
-        rowHtml += `<td>${row['연령대']}</td>`;
-        keys.slice(2).forEach(k => rowHtml += `<td>${row[k]}</td>`);
-        rowHtml += '</tr>';
-        return rowHtml;
-      }).join('');
-
-      // ✅ 나머지 진료실 렌더링
-      let groupIndex = 0;
-      const 병원전체제외 = 통계.filter(r => r['진료실'] !== "병원전체");
-      let currentGroup = "";
-      for (let i = 0; i < 병원전체제외.length;) {
-        const groupName = 병원전체제외[i]['진료실'];
-        const groupRows = 병원전체제외.filter(r => r['진료실'] === groupName);
-        groupIndex++;
-        const groupClass = `group-${groupIndex % 5 || 5}`;
-        groupRows.forEach((row, j) => {
-          html += '<tr class="' + groupClass + '">';
-          if (j === 0) html += `<td rowspan="${groupRows.length}">${groupName}</td>`;
-          html += `<td>${row['연령대']}</td>`;
-          keys.slice(2).forEach(k => html += `<td>${row[k]}</td>`);
-          html += '</tr>';
-        });
-        i += groupRows.length;
-      }
-
-      html += '</tbody></table>';
-      document.getElementById('output').innerHTML = html;
+      reader.readAsArrayBuffer(file);
+    });
   </script>
 </body>
 </html>
