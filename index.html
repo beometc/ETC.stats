@@ -34,7 +34,7 @@
   <script>
     function getAgeGroup(value) {
       if (!value) return "미확인";
-      const match = value.toString().match(/(\d{1,3})세/);
+      const match = value.toString().replace(/\s+/g, '').match(/(\d{1,3})세/);
       if (!match) return "미확인";
       const age = parseInt(match[1]);
       if (age <= 19) return "0~10대";
@@ -59,18 +59,17 @@
         const headers = rows[0];
         const dataRows = rows.slice(1);
 
-        const 연령Col = headers.find(h => h.includes("연령"));
-        const 진료실Col = headers.find(h => h.includes("진료실") || h.includes("진료과"));
-        const 초진재진Col = headers.find(h => h.includes("초진") || h.includes("재진") || h.includes("구분"));
-        const 내원횟수Col = headers.find(h => h.includes("내원") && h.includes("횟수"));
-        const 주사Col = headers.find(h => h.includes("주사"));
-        const 메모Col = headers.find(h => h.includes("메모"));
+        const 연령Col = headers.find(h => h.includes("S/A"));
+        const 진료실Col = headers.find(h => h.includes("진료과") || h.includes("진료실"));
+        const 구분Col = headers.find(h => h.includes("초/재") || h.includes("신환"));
+        const 접수메모Col = headers.find(h => h.includes("접수메모") || h.includes("메모"));
 
         const groupMap = {};
 
         dataRows.forEach(row => {
           const 연령 = getAgeGroup(row[headers.indexOf(연령Col)]);
           const 진료실 = row[headers.indexOf(진료실Col)] || "기타";
+
           const keyList = [
             `${진료실}/${연령}`,
             `${진료실}/전체`,
@@ -102,20 +101,20 @@
             let 키워드포함 = 0;
 
             rows.forEach(r => {
-              const 구분 = r[headers.indexOf(초진재진Col)].toString();
-              const 내원 = parseInt(r[headers.indexOf(내원횟수Col)]) || 1;
-              const 주사 = r[headers.indexOf(주사Col)].toString();
-              const 메모 = r[headers.indexOf(메모Col)].toString().toLowerCase();
+              const 구분 = r[headers.indexOf(구분Col)].toString();
+              const 메모 = r[headers.indexOf(접수메모Col)].toString().toLowerCase();
+              const 주사 = 메모.includes("주사") ? "주사" : "";
+              const 내원 = 1;
 
-              if (구분.includes("초진")) {
+              if (구분.includes("초진") || 구분.includes("신환")) {
                 초진++;
                 총내원횟수 += 내원;
-                if (주사.includes("주사")) {
+                if (주사) {
                   초진주사++;
                   총주사횟수++;
                   if (내원 > 1) 초진주사재진++;
                 }
-              } else if (구분.includes("재진")) {
+              } else {
                 재진++;
               }
 
