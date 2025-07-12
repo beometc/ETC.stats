@@ -61,9 +61,9 @@
     });
 
     function getAgeGroup(ageStr) {
-      const match = ageStr.match(/(\\d+)세/);
+      const match = ageStr.match(/(\d+)세/);
       const age = match ? parseInt(match[1]) : NaN;
-      if (isNaN(age)) return "미확인";
+      if (isNaN(age)) return "";
       if (age <= 19) return "0~10대";
       if (age <= 29) return "20대";
       if (age <= 39) return "30대";
@@ -108,7 +108,7 @@
       const 재진조건 = ["재진", "물리치료내원", "진찰료 산정안함"];
       const 진료실목록 = [...new Set(df.map(r => r[headerMap['진료과']] || '기타'))];
       const 연령정보 = !!headerMap['연령'];
-      const 연령순서 = ["0~10대", "20대", "30대", "40대", "50대~64세", "65세이상", "미확인"];
+      const 연령순서 = ["전체", "0~10대", "20대", "30대", "40대", "50대~64세", "65세이상"];
 
       function countStats(data, 구분명) {
         const 초진환자 = data.filter(r => ["신환", "90일초진"].includes(r[headerMap['초재']]));
@@ -173,18 +173,14 @@
       }
 
       let 통계 = [countStats(df, "전체")];
-
       진료실목록.forEach((진료과, i) => {
         const 진료과데이터 = df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과);
-        통계.push(countStats(진료과데이터, `${진료과} / 전체`));
-        if (연령정보) {
-          연령순서.forEach(연령대 => {
-            const 그룹 = 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
-            if (그룹.length > 0) {
-              통계.push(countStats(그룹, `${진료과} / ${연령대}`));
-            }
-          });
-        }
+        연령순서.forEach(연령대 => {
+          const 그룹 = 연령대 === "전체" ? 진료과데이터 : 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
+          if (그룹.length > 0) {
+            통계.push(countStats(그룹, `${진료과} / ${연령대}`));
+          }
+        });
       });
 
       const keys = Object.keys(통계[0]);
