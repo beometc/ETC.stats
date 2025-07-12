@@ -23,12 +23,10 @@
 </head>
 <body>
   <h1>/비트/외래 통계 자동 계산기</h1>
-
   <div class="input-section">
     <label>✔️ 특정 키워드(예: PT만)를 입력하세요:</label><br>
     <input type="text" id="keywordInput" placeholder="예: PT만" style="width: 200px; margin-top: 5px;" />
   </div>
-
   <input type="file" id="fileInput" accept=".xlsx,.csv" />
   <div id="output"></div>
   <div id="warning" class="warn"></div>
@@ -63,66 +61,105 @@
 
         const 연령Col = headers.find(h => h.includes("연령"));
         const 진료실Col = headers.find(h => h.includes("진료실") || h.includes("진료과"));
+        const 초진재진Col = headers.find(h => h.includes("초진") || h.includes("재진") || h.includes("구분"));
+        const 내원횟수Col = headers.find(h => h.includes("내원") && h.includes("횟수"));
+        const 주사Col = headers.find(h => h.includes("주사"));
+        const 메모Col = headers.find(h => h.includes("메모"));
 
         const groupMap = {};
+
         dataRows.forEach(row => {
           const 연령 = getAgeGroup(row[headers.indexOf(연령Col)]);
           const 진료실 = row[headers.indexOf(진료실Col)] || "기타";
+          const keyList = [
+            `${진료실}/${연령}`,
+            `${진료실}/전체`,
+            `병원전체/${연령}`,
+            `병원전체/전체`
+          ];
 
-          const key = `${진료실}/${연령}`;
-          if (!groupMap[key]) groupMap[key] = [];
-          groupMap[key].push(row);
-
-          const 전체Key = `${진료실}/전체`;
-          if (!groupMap[전체Key]) groupMap[전체Key] = [];
-          groupMap[전체Key].push(row);
-
-          const 병원전체Key = `병원전체/${연령}`;
-          if (!groupMap[병원전체Key]) groupMap[병원전체Key] = [];
-          groupMap[병원전체Key].push(row);
-
-          const 병원전체전체Key = `병원전체/전체`;
-          if (!groupMap[병원전체전체Key]) groupMap[병원전체전체Key] = [];
-          groupMap[병원전체전체Key].push(row);
+          keyList.forEach(key => {
+            if (!groupMap[key]) groupMap[key] = [];
+            groupMap[key].push(row);
+          });
         });
 
         const 연령순서 = ["전체", "0~10대", "20대", "30대", "40대", "50대~64세", "65세이상"];
         const 통계 = [];
-
         const 진료실들 = [...new Set(Object.keys(groupMap).map(k => k.split('/')[0]))];
 
         진료실들.forEach((진료실, i) => {
           연령순서.forEach(연령대 => {
             const key = `${진료실}/${연령대}`;
-            if (groupMap[key]) {
-              const rows = groupMap[key];
-              통계.push({
-                "진료실": 진료실,
-                "연령대": 연령대,
-                "총환자수": rows.length,
-                "초진환자수": 0,
-                "재진환자수": 0,
-                "초진 주사 처방률": "0%",
-                "초진주사 갯수": 0,
-                "초진 주사환자 재진율": "0%",
-                "초진주사환자 평균 주사횟수": 0,
-                "초진 주사환자 평균내원횟수": 0,
-                "초진평균내원횟수": 0,
-                "초진 재내원율": "0%",
-                "1회 내원 비율": "0%",
-                "2회 내원 비율": "0%",
-                "3회 내원 비율": "0%",
-                "4회 내원 비율": "0%",
-                "5회 이상 내원 비율": "0%",
-                "특정 키워드 포함 메모 수": 0
-              });
-            }
+            const rows = groupMap[key];
+            if (!rows) return;
+
+            let 총환자수 = rows.length;
+            let 초진 = 0, 재진 = 0;
+            let 초진주사 = 0, 초진주사재진 = 0;
+            let 총주사횟수 = 0, 총내원횟수 = 0;
+            let 내원1 = 0, 내원2 = 0, 내원3 = 0, 내원4 = 0, 내원5이상 = 0;
+            let 키워드포함 = 0;
+
+            rows.forEach(r => {
+              const 구분 = r[headers.indexOf(초진재진Col)] || "";
+              const 내원 = parseInt(r[headers.indexOf(내원횟수Col)] || "1");
+              const 주사 = r[headers.indexOf(주사Col)] || "";
+              const 메모 = r[headers.indexOf(메모Col)].toString().toLowerCase();
+
+              if (구분.includes("초진")) {
+                초진++;
+                if (주사.includes("주사")) {
+                  초진주사++;
+                  총주사횟수++;
+                  총내원횟수 += 내원;
+                  if (내원 > 1) 초진주사재진++;
+                }
+                if (내원 > 1) 총내원횟수 += 내원;
+              } else {
+                재진++;
+              }
+
+              if (keyword && 메모.includes(keyword)) 키워드포함++;
+
+              if (내원 === 1) 내원1++;
+              else if (내원 === 2) 내원2++;
+              else if (내원 === 3) 내원3++;
+              else if (내원 === 4) 내원4++;
+              else 내원5이상++;
+            });
+
+            const 초진주사재진율 = 초진주사 > 0 ? `${Math.round(초진주사재진 / 초진주사 * 100)}%` : "0%";
+            const 초진주사평균주사횟수 = 초진주사 > 0 ? (총주사횟수 / 초진주사).toFixed(1) : 0;
+            const 초진주사평균내원 = 초진주사 > 0 ? (총내원횟수 / 초진주사).toFixed(1) : 0;
+            const 초진평균내원 = 초진 > 0 ? (총내원횟수 / 초진).toFixed(1) : 0;
+            const 초진재내원율 = 초진 > 0 ? `${Math.round((초진 - 내원1) / 초진 * 100)}%` : "0%";
+
+            통계.push({
+              "진료실": 진료실,
+              "연령대": 연령대,
+              "총환자수": 총환자수,
+              "초진환자수": 초진,
+              "재진환자수": 재진,
+              "초진 주사 처방률": 초진 > 0 ? `${Math.round(초진주사 / 초진 * 100)}%` : "0%",
+              "초진주사 갯수": 초진주사,
+              "초진 주사환자 재진율": 초진주사재진율,
+              "초진주사환자 평균 주사횟수": 초진주사평균주사횟수,
+              "초진 주사환자 평균내원횟수": 초진주사평균내원,
+              "초진평균내원횟수": 초진평균내원,
+              "초진 재내원율": 초진재내원율,
+              "1회 내원 비율": `${Math.round(내원1 / 총환자수 * 100)}%`,
+              "2회 내원 비율": `${Math.round(내원2 / 총환자수 * 100)}%`,
+              "3회 내원 비율": `${Math.round(내원3 / 총환자수 * 100)}%`,
+              "4회 내원 비율": `${Math.round(내원4 / 총환자수 * 100)}%`,
+              "5회 이상 내원 비율": `${Math.round(내원5이상 / 총환자수 * 100)}%`,
+              "특정 키워드 포함 메모 수": 키워드포함
+            });
           });
         });
 
         const keys = Object.keys(통계[0]);
         let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
-
         let groupIndex = 0;
         const grouped = {};
         통계.forEach(row => {
