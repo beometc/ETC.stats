@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>/비트/ETC.기타통계</title>
+  <title>/비트/외래 통계 자동 계산 도구</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
@@ -13,10 +13,15 @@
     th { background-color: #f4f4f4; }
     .warn { color: red; font-weight: bold; margin-top: 10px; }
     .input-section { margin: 20px 0; }
+    .group-1 { background-color: #fff8e1; }
+    .group-2 { background-color: #f1f8e9; }
+    .group-3 { background-color: #fce4ec; }
+    .group-4 { background-color: #ede7f6; }
+    .group-5 { background-color: #e3f2fd; }
   </style>
 </head>
 <body>
-  <h1>/비트/ETC.기타통계</h1>
+  <h1>/비트/외래 통계 자동 계산기</h1>
 
   <div class="input-section">
     <label>✔️ 특정 키워드(예: PT만)를 입력하세요:</label><br>
@@ -56,7 +61,7 @@
     });
 
     function getAgeGroup(ageStr) {
-      const match = ageStr.match(/(\d+)세/);
+      const match = ageStr.match(/(\\d+)세/);
       const age = match ? parseInt(match[1]) : NaN;
       if (isNaN(age)) return "미확인";
       if (age <= 19) return "0~10대";
@@ -169,8 +174,9 @@
 
       let 통계 = [countStats(df, "전체")];
 
-      진료실목록.forEach(진료과 => {
+      진료실목록.forEach((진료과, i) => {
         const 진료과데이터 = df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과);
+        통계.push(countStats(진료과데이터, `${진료과} / 전체`));
         if (연령정보) {
           연령순서.forEach(연령대 => {
             const 그룹 = 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
@@ -178,15 +184,21 @@
               통계.push(countStats(그룹, `${진료과} / ${연령대}`));
             }
           });
-        } else {
-          통계.push(countStats(진료과데이터, 진료과));
         }
       });
 
       const keys = Object.keys(통계[0]);
       let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+      let groupIndex = 0, currentGroup = "";
       통계.forEach(row => {
-        html += '<tr>' + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
+        const 구분 = row['구분'] || "";
+        const groupName = 구분.split("/")[0].trim();
+        if (groupName !== currentGroup) {
+          groupIndex++;
+          currentGroup = groupName;
+        }
+        const groupClass = `group-${groupIndex % 5 || 5}`;
+        html += '<tr class="' + groupClass + '">' + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
       });
       html += '</tbody></table>';
       document.getElementById('output').innerHTML = html;
