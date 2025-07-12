@@ -123,21 +123,24 @@
         const keys = Object.keys(통계[0]);
         let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
 
-        let groupIndex = 0, currentGroup = "";
-        for (let i = 0; i < 통계.length;) {
-          const groupName = 통계[i]['진료실'];
-          const groupRows = 통계.filter(r => r['진료실'] === groupName);
-          groupIndex++;
-          const groupClass = groupName === "병원전체" ? 'group-0' : `group-${groupIndex % 5 || 5}`;
-          groupRows.forEach((row, j) => {
+        let groupIndex = 0;
+        const grouped = {};
+        통계.forEach(row => {
+          const g = row['진료실'];
+          if (!grouped[g]) grouped[g] = [];
+          grouped[g].push(row);
+        });
+
+        Object.entries(grouped).forEach(([진료실, rows], idx) => {
+          const groupClass = 진료실 === "병원전체" ? 'group-0' : `group-${(idx % 5) + 1}`;
+          rows.forEach((row, i) => {
             html += '<tr class="' + groupClass + '">';
-            if (j === 0) html += `<td rowspan="${groupRows.length}">${row['진료실']}</td>`;
+            if (i === 0) html += `<td rowspan="${rows.length}">${진료실}</td>`;
             html += `<td>${row['연령대']}</td>`;
             keys.slice(2).forEach(k => html += `<td>${row[k]}</td>`);
             html += '</tr>';
           });
-          i += groupRows.length;
-        }
+        });
 
         html += '</tbody></table>';
         document.getElementById('output').innerHTML = html;
