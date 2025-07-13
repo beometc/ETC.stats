@@ -165,18 +165,28 @@
         };
       }
 
-      let 통계 = [countStats(df, "전체")];
+      let 통계 = [];
 
-      진료실목록.forEach(진료과 => {
-        const 진료과데이터 = df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과);
+      const 구분대상 = [{ label: "전체", data: df }]
+        .concat(
+          진료실목록.map(진료과 => ({
+            label: 진료과,
+            data: df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과)
+          }))
+        );
+
+      구분대상.forEach(대상 => {
+        const baseLabel = 대상.label;
+        const baseData = 대상.data;
+
+        통계.push(countStats(baseData, baseLabel));
+
         if (연령정보) {
-          const 연령대목록 = [...new Set(진료과데이터.map(r => getAgeGroup(r[headerMap['연령']])))]
+          const 연령대목록 = [...new Set(baseData.map(r => getAgeGroup(r[headerMap['연령']])))]
           연령대목록.forEach(연령대 => {
-            const 그룹 = 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
-            통계.push(countStats(그룹, `${진료과} / ${연령대}`));
+            const 그룹 = baseData.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
+            통계.push(countStats(그룹, `${baseLabel} / ${연령대}`));
           });
-        } else {
-          통계.push(countStats(진료과데이터, 진료과));
         }
       });
 
