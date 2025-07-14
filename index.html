@@ -32,6 +32,52 @@
   <div id="warning" class="warn"></div>
 
   <script>
+    const AGE_ORDER = ["0~10대", "20대", "30대", "40대", "50대~64세", "65세이상", "전체"];
+
+    function sortResult(a, b) {
+      const aGroup = a["구분"];
+      const bGroup = b["구분"];
+      if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
+      const aAge = a["연령대"];
+      const bAge = b["연령대"];
+      return AGE_ORDER.indexOf(aAge) - AGE_ORDER.indexOf(bAge);
+    }
+
+    function renderTable(result) {
+      result.sort(sortResult);
+      const keys = Object.keys(result[0] || {}).filter(k => k !== '구분' && k !== '연령대');
+      if (keys.length === 0) {
+        document.getElementById('warning').innerText = '❗ 통계 데이터를 생성할 수 없습니다. 열 이름을 확인하세요.';
+        return;
+      }
+
+      let html = '<table><thead><tr><th>구분</th><th>연령대</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+      let prevGroup = null;
+      let groupRows = {};
+      result.forEach(row => {
+        groupRows[row["구분"]] = (groupRows[row["구분"]] || 0) + 1;
+      });
+
+      result.forEach((row) => {
+        const className = row["구분"].startsWith("전체") ? "whole" :
+                          row["구분"].startsWith("1진료실") ? "room1" :
+                          row["구분"].startsWith("2진료실") ? "room2" :
+                          row["구분"].startsWith("3진료실") ? "room3" :
+                          row["구분"].startsWith("4진료실") ? "room4" :
+                          row["구분"].startsWith("5진료실") ? "room5" : "";
+
+        html += `<tr class="${className}">`;
+        if (row["구분"] !== prevGroup) {
+          html += `<td rowspan="${groupRows[row["구분"]]}">${row["구분"]}</td>`;
+          prevGroup = row["구분"];
+        }
+        html += `<td>${row["연령대"]}</td>` + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('output').innerHTML = html;
+    }
+
     document.getElementById('fileInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       const keyword = document.getElementById('keywordInput').value.trim().toLowerCase();
@@ -58,155 +104,6 @@
       if (isCSV) reader.readAsText(file);
       else reader.readAsArrayBuffer(file);
     });
-
-    function process(rawData, keyword) {
-      const headerRowIndex = rawData.findIndex(row => row.join('').includes("초/재"));
-      if (headerRowIndex === -1) {
-        document.getElementById('warning').innerText = '❗ 유효한 열 이름을 찾을 수 없습니다.';
-        return;
-      }
-
-      const headers = rawData[headerRowIndex].map(h => h.toString().trim());
-      const dataRows = rawData.slice(headerRowIndex + 1).filter(r => r.length > 1);
-      const df = dataRows.map(row => {
-        let obj = {};
-        headers.forEach((col, i) => { obj[col] = row[i] || ""; });
-        return obj;
-      });
-
-      const col = name => headers.find(h => h.includes(name)) || "";
-      const colMap = {
-        sa: col("S/A"),
-        chojae: col("초/재"),
-        chart: col("챠트번호"),
-        dept: col("진료과"),
-        memo: col("접수메모"),
-        anesthesia: col("마취")
-      };
-
-      function getAgeFromSA(sa) {
-        const match = sa.match(/\/(\d{1,2})세/);
-        return match ? parseInt(match[1]) : null;
-      }
-
-      function getAgeGroup(age) {
-        if (isNaN(age)) return "미확인";
-        if (age <= 19) return "0~10대";
-        if (age <= 29) return "20대";
-        if (age <= 39) return "30대";
-        if (age <= 49) return "40대";
-        if (age <= 64) return "50대~64세";
-        return "65세이상";
-      }
-
-      const result = [];
-      const groupStats = (records, group, ageLabel) => {
-        const sub = records;
-        const newPts = sub.filter(r => ["신환", "90일초진"].includes(r[colMap.chojae]));
-        const chartSet = [...new Set(newPts.map(r => r[colMap.chart]))];
-        const injNewPts = newPts.filter(r => (r[colMap.anesthesia] || '').includes('●'));
-        const injCharts = [...new Set(injNewPts.map(r => r[colMap.chart]))];
-        const allVisits = sub.length;
-
-        const injVisits = sub.filter(r => injCharts.includes(r[colMap.chart]));
-        const injCount = {}, visitCount = {};
-        injVisits.forEach(r => {
-          const id = r[colMap.chart];
-          if ((r[colMap.anesthesia] || '').includes('●')) injCount[id] = (injCount[id] || 0) + 1;
-          visitCount[id] = (visitCount[id] || 0) + 1;
-        });
-
-        const avgInj = Object.values(injCount).length ? (Object.values(injCount).reduce((a, b) => a + b) / Object.keys(injCount).length).toFixed(1) : 0;
-        const avgVisitInj = Object.values(visitCount).length ? (Object.values(visitCount).reduce((a, b) => a + b) / Object.keys(visitCount).length).toFixed(1) : 0;
-
-        const totalNewRecords = sub.filter(r => chartSet.includes(r[colMap.chart]));
-        const newVisitCounts = {};
-        totalNewRecords.forEach(r => {
-          const id = r[colMap.chart];
-          newVisitCounts[id] = (newVisitCounts[id] || 0) + 1;
-        });
-
-        const newAvgVisit = Object.values(newVisitCounts).length ? (Object.values(newVisitCounts).reduce((a, b) => a + b) / Object.keys(newVisitCounts).length).toFixed(1) : 0;
-        const reVisitRatio = Object.values(newVisitCounts).filter(v => v >= 2).length / Object.keys(newVisitCounts).length * 100;
-        const memoCount = keyword ? sub.filter(r => (r[colMap.memo] || '').toLowerCase().includes(keyword)).length : "";
-
-        const visitRatio = n => Math.round(Object.values(newVisitCounts).filter(v => v === n).length / Object.keys(newVisitCounts).length * 100);
-        const over5 = Math.round(Object.values(newVisitCounts).filter(v => v >= 5).length / Object.keys(newVisitCounts).length * 100);
-
-        return {
-          구분: group,
-          연령대: ageLabel,
-          "초진환자수": chartSet.length,
-          "재진환자수": sub.filter(r => ["재진", "물리치료내원", "진찰료 산정안함"].includes(r[colMap.chojae])).length,
-          "총환자수": allVisits,
-          "초진 주사 처방률": chartSet.length ? Math.round((injNewPts.length / chartSet.length) * 100) + "%" : "0%",
-          "초진주사 갯수": injNewPts.length,
-          "초진 주사환자 재진율": visitCount && Object.keys(visitCount).length ? Math.round((Object.values(visitCount).filter(v => v >= 2).length / Object.keys(visitCount).length) * 100) + "%" : "0%",
-          "초진주사환자 평균 주사횟수": avgInj,
-          "초진 주사환자 평균내원횟수": avgVisitInj,
-          "초진평균내원횟수": newAvgVisit,
-          "초진 재내원율": Math.round(reVisitRatio) + "%",
-          "1회 내원 비율": visitRatio(1) + "%",
-          "2회 내원 비율": visitRatio(2) + "%",
-          "3회 내원 비율": visitRatio(3) + "%",
-          "4회 내원 비율": visitRatio(4) + "%",
-          "5회 이상 내원 비율": over5 + "%",
-          "특정 키워드 포함 메모 수": memoCount
-        };
-      };
-
-      const groupMap = {};
-
-      const globalGroups = {};
-      df.forEach(r => {
-        const age = getAgeFromSA(r[colMap.sa]);
-        const group = getAgeGroup(age);
-        if (!globalGroups[group]) globalGroups[group] = [];
-        globalGroups[group].push(r);
-      });
-      result.push(groupStats(df, "전체", "전체"));
-      Object.entries(globalGroups).forEach(([age, rows]) => {
-        result.push(groupStats(rows, "전체", age));
-      });
-
-      const rooms = [...new Set(df.map(r => r[colMap.dept]))];
-      rooms.forEach(room => {
-        const filtered = df.filter(r => r[colMap.dept] === room);
-        result.push(groupStats(filtered, room, "전체"));
-
-        const roomAgeGroups = {};
-        filtered.forEach(r => {
-          const age = getAgeFromSA(r[colMap.sa]);
-          const group = getAgeGroup(age);
-          if (!roomAgeGroups[group]) roomAgeGroups[group] = [];
-          roomAgeGroups[group].push(r);
-        });
-        Object.entries(roomAgeGroups).forEach(([age, rows]) => {
-          result.push(groupStats(rows, room, age));
-        });
-      });
-
-      const keys = Object.keys(result[0] || {}).filter(k => k !== '구분' && k !== '연령대');
-      if (keys.length === 0) {
-        document.getElementById('warning').innerText = '❗ 통계 데이터를 생성할 수 없습니다. 열 이름을 확인하세요.';
-        return;
-      }
-
-      let html = '<table><thead><tr><th>구분</th><th>연령대</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
-      result.forEach(row => {
-        let className = "";
-        if (row["구분"].startsWith("전체")) className = "whole";
-        else if (row["구분"].startsWith("1진료실")) className = "room1";
-        else if (row["구분"].startsWith("2진료실")) className = "room2";
-        else if (row["구분"].startsWith("3진료실")) className = "room3";
-        else if (row["구분"].startsWith("4진료실")) className = "room4";
-        else if (row["구분"].startsWith("5진료실")) className = "room5";
-
-        html += `<tr class="${className}"><td>${row["구분"]}</td><td>${row["연령대"]}</td>` + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
-      });
-      html += '</tbody></table>';
-      document.getElementById('output').innerHTML = html;
-    }
   </script>
 </body>
 </html>
