@@ -17,12 +17,10 @@
 </head>
 <body>
   <h1>/비트/외래 통계 자동 계산기</h1>
-
   <div class="input-section">
     <label>✔️ 특정 키워드(예: PT만)를 입력하세요:</label><br>
     <input type="text" id="keywordInput" placeholder="예: PT만" style="width: 200px; margin-top: 5px;" />
   </div>
-
   <input type="file" id="fileInput" accept=".xlsx,.csv" />
   <div id="output"></div>
   <div id="warning" class="warn"></div>
@@ -55,8 +53,12 @@
       else reader.readAsArrayBuffer(file);
     });
 
-    function getAgeGroup(ageStr) {
-      const age = parseInt(ageStr);
+    function getAgeFromSA(sa) {
+      const match = sa.match(/\/(\d{1,2})\uC138/);
+      return match ? parseInt(match[1]) : null;
+    }
+
+    function getAgeGroup(age) {
       if (isNaN(age)) return "미확인";
       if (age <= 19) return "0~10대";
       if (age <= 29) return "20대";
@@ -67,7 +69,7 @@
     }
 
     function process(rawData, keyword) {
-      const headerRowIndex = rawData.findIndex(row => row.join('').includes("초/재") || row.join('').includes("챠트번호") || row.join('').includes("진료과") || row.join('').includes("마취"));
+      const headerRowIndex = rawData.findIndex(row => row.join('').includes("초/재"));
       if (headerRowIndex === -1) {
         document.getElementById('warning').innerText = '❗ 유효한 열 이름을 찾을 수 없습니다.';
         return;
@@ -81,108 +83,94 @@
         return obj;
       });
 
-      const headerMap = {};
-      headers.forEach(h => {
-        const lname = h.toLowerCase();
-        if (lname.includes("초") && lname.includes("재")) headerMap['초재'] = h;
-        else if (lname.includes("차트") || lname.includes("챠트") || lname.includes("환자") || lname.includes("id")) headerMap['챠트번호'] = h;
-        else if (lname.includes("마취")) headerMap['마취'] = h;
-        else if ((lname.includes("진료") && lname.includes("과")) || lname.includes("과목")) headerMap['진료과'] = h;
-        else if (lname.includes("메모")) headerMap['접수메모'] = h;
-        else if (lname.includes("나이") || lname.includes("연령") || lname.includes("생년")) headerMap['연령'] = h;
-      });
+      const col = name => headers.find(h => h.includes(name)) || "";
+      const colMap = {
+        sa: col("S/A"),
+        chojae: col("초/재"),
+        chart: col("챠트번호"),
+        dept: col("진료과"),
+        memo: col("접수메모"),
+        anesthesia: col("마취")
+      };
 
-      const 필수 = ['초재', '챠트번호', '마취', '진료과'];
-      const 누락 = 필수.filter(k => !headerMap[k]);
-      if (누락.length) {
-        document.getElementById('warning').innerText = `❗ 필수 열 누락: ${누락.join(', ')}`;
-        return;
-      }
+      const reVisitCodes = ["재진", "물리치료내원", "진찰료 산정안함"];
+      const rooms = [...new Set(df.map(r => r[colMap.dept] || "기타"))];
 
-      const 재진조건 = ["재진", "물리치료내원", "진찰료 산정안함"];
-      const 진료실목록 = [...new Set(df.map(r => r[headerMap['진료과']] || '기타'))];
-      const 연령정보 = !!headerMap['연령'];
+      function groupStats(records, name) {
+        const sub = records;
+        const newPts = sub.filter(r => ["신환", "90일초진"].includes(r[colMap.chojae]));
+        const chartSet = [...new Set(newPts.map(r => r[colMap.chart]))];
+        const injNewPts = newPts.filter(r => (r[colMap.anesthesia] || '').includes('●'));
+        const injCharts = [...new Set(injNewPts.map(r => r[colMap.chart]))];
+        const allVisits = sub.length;
 
-      function countStats(data, 구분명) {
-        const sub = data;
-        const 초진환자 = sub.filter(r => ["신환", "90일초진"].includes(r[headerMap['초재']]));
-        const 초진차트 = [...new Set(초진환자.map(r => r[headerMap['챠트번호']]))];
-        const 재진방문수 = sub.filter(r => 재진조건.includes(r[headerMap['초재']])).length;
-        const 총방문수 = sub.length;
-        const 초진주사 = 초진환자.filter(r => (r[headerMap['마취']] || '').includes('●'));
-        const 초진주사갯수 = 초진주사.length;
-        const 초진주사처방률 = 초진차트.length ? Math.round((초진주사.length / 초진차트.length) * 100) : 0;
-
-        const 주사차트 = [...new Set(초진주사.map(r => r[headerMap['챠트번호']]))];
-        const 주사기록 = sub.filter(r => 주사차트.includes(r[headerMap['챠트번호']]));
-
-        const 주사횟수 = {}, 내원횟수_주사 = {};
-        주사기록.forEach(r => {
-          const key = r[headerMap['챠트번호']];
-          if ((r[headerMap['마취']] || '').includes('●')) {
-            주사횟수[key] = (주사횟수[key] || 0) + 1;
-          }
-          내원횟수_주사[key] = (내원횟수_주사[key] || 0) + 1;
+        const injVisits = sub.filter(r => injCharts.includes(r[colMap.chart]));
+        const injCount = {}, visitCount = {};
+        injVisits.forEach(r => {
+          const id = r[colMap.chart];
+          if ((r[colMap.anesthesia] || '').includes('●')) injCount[id] = (injCount[id] || 0) + 1;
+          visitCount[id] = (visitCount[id] || 0) + 1;
         });
 
-        const 평균주사횟수 = Object.keys(주사횟수).length ? (Object.values(주사횟수).reduce((a, b) => a + b, 0) / Object.keys(주사횟수).length).toFixed(1) : 0;
-        const 평균내원주사 = Object.keys(내원횟수_주사).length ? (Object.values(내원횟수_주사).reduce((a, b) => a + b, 0) / Object.keys(내원횟수_주사).length).toFixed(1) : 0;
+        const avgInj = Object.values(injCount).length ? (Object.values(injCount).reduce((a, b) => a + b) / Object.keys(injCount).length).toFixed(1) : 0;
+        const avgVisitInj = Object.values(visitCount).length ? (Object.values(visitCount).reduce((a, b) => a + b) / Object.keys(visitCount).length).toFixed(1) : 0;
 
-        const 전체초진기록 = sub.filter(r => 초진차트.includes(r[headerMap['챠트번호']]));
-        const 초진내원 = {};
-        전체초진기록.forEach(r => {
-          const key = r[headerMap['챠트번호']];
-          초진내원[key] = (초진내원[key] || 0) + 1;
+        const totalNewRecords = sub.filter(r => chartSet.includes(r[colMap.chart]));
+        const newVisitCounts = {};
+        totalNewRecords.forEach(r => {
+          const id = r[colMap.chart];
+          newVisitCounts[id] = (newVisitCounts[id] || 0) + 1;
         });
 
-        const 초진평균내원 = Object.keys(초진내원).length ? (Object.values(초진내원).reduce((a, b) => a + b, 0) / Object.keys(초진내원).length).toFixed(1) : 0;
-        const 재내원수 = Object.values(초진내원).filter(n => n >= 2).length;
-        const 초진재내원율 = Object.keys(초진내원).length ? Math.round((재내원수 / Object.keys(초진내원).length) * 100) : 0;
+        const newAvgVisit = Object.values(newVisitCounts).length ? (Object.values(newVisitCounts).reduce((a, b) => a + b) / Object.keys(newVisitCounts).length).toFixed(1) : 0;
+        const reVisitRatio = Object.values(newVisitCounts).filter(v => v >= 2).length / Object.keys(newVisitCounts).length * 100;
+        const memoCount = keyword ? sub.filter(r => (r[colMap.memo] || '').toLowerCase().includes(keyword)).length : "";
 
-        const 내원비율 = count => Math.round((Object.values(초진내원).filter(n => n === count).length / Object.keys(초진내원).length) * 100);
-        const 내원비율_5이상 = Math.round((Object.values(초진내원).filter(n => n >= 5).length / Object.keys(초진내원).length) * 100);
-
-        const 메모갯수 = headerMap['접수메모'] && keyword ? sub.filter(r => (r[headerMap['접수메모']] || "").toLowerCase().includes(keyword)).length : "";
+        const visitRatio = n => Math.round(Object.values(newVisitCounts).filter(v => v === n).length / Object.keys(newVisitCounts).length * 100);
+        const over5 = Math.round(Object.values(newVisitCounts).filter(v => v >= 5).length / Object.keys(newVisitCounts).length * 100);
 
         return {
-          "구분": 구분명,
-          "초진환자수": 초진차트.length,
-          "재진환자수": 재진방문수,
-          "총환자수": 총방문수,
-          "초진 주사 처방률": `${초진주사처방률}%`,
-          "초진주사 갯수": 초진주사갯수,
-          "초진 주사환자 재진율": `${Math.round((Object.values(내원횟수_주사).filter(v => v >= 2).length / Object.keys(내원횟수_주사).length) * 100) || 0}%`,
-          "초진주사환자 평균 주사횟수": 평균주사횟수,
-          "초진 주사환자 평균내원횟수": 평균내원주사,
-          "초진평균내원횟수": 초진평균내원,
-          "초진 재내원율": `${초진재내원율}%`,
-          "1회 내원 비율": `${내원비율(1)}%`,
-          "2회 내원 비율": `${내원비율(2)}%`,
-          "3회 내원 비율": `${내원비율(3)}%`,
-          "4회 내원 비율": `${내원비율(4)}%`,
-          "5회 이상 내원 비율": `${내원비율_5이상}%`,
-          "특정 키워드 포함 메모 수": 메모갯수
+          "구분": name,
+          "초진환자수": chartSet.length,
+          "재진환자수": sub.filter(r => reVisitCodes.includes(r[colMap.chojae])).length,
+          "총환자수": allVisits,
+          "초진 주사 처방률": chartSet.length ? Math.round((injNewPts.length / chartSet.length) * 100) + "%" : "0%",
+          "초진주사 갯수": injNewPts.length,
+          "초진 주사환자 재진율": visitCount && Object.keys(visitCount).length ? Math.round((Object.values(visitCount).filter(v => v >= 2).length / Object.keys(visitCount).length) * 100) + "%" : "0%",
+          "초진주사환자 평균 주사횟수": avgInj,
+          "초진 주사환자 평균내원횟수": avgVisitInj,
+          "초진평균내원횟수": newAvgVisit,
+          "초진 재내원율": Math.round(reVisitRatio) + "%",
+          "1회 내원 비율": visitRatio(1) + "%",
+          "2회 내원 비율": visitRatio(2) + "%",
+          "3회 내원 비율": visitRatio(3) + "%",
+          "4회 내원 비율": visitRatio(4) + "%",
+          "5회 이상 내원 비율": over5 + "%",
+          "특정 키워드 포함 메모 수": memoCount
         };
       }
 
-      let 통계 = [countStats(df, "전체")];
+      let result = [groupStats(df, "전체")];
+      rooms.forEach(room => {
+        const filtered = df.filter(r => r[colMap.dept] === room);
+        result.push(groupStats(filtered, room));
 
-      진료실목록.forEach(진료과 => {
-        const 진료과데이터 = df.filter(r => (r[headerMap['진료과']] || '기타') === 진료과);
-        if (연령정보) {
-          const 연령대목록 = [...new Set(진료과데이터.map(r => getAgeGroup(r[headerMap['연령']])))]
-          연령대목록.forEach(연령대 => {
-            const 그룹 = 진료과데이터.filter(r => getAgeGroup(r[headerMap['연령']]) === 연령대);
-            통계.push(countStats(그룹, `${진료과} / ${연령대}`));
-          });
-        } else {
-          통계.push(countStats(진료과데이터, 진료과));
-        }
+        const ageGroups = {};
+        filtered.forEach(r => {
+          const age = getAgeFromSA(r[colMap.sa]);
+          const group = getAgeGroup(age);
+          if (!ageGroups[group]) ageGroups[group] = [];
+          ageGroups[group].push(r);
+        });
+
+        Object.entries(ageGroups).forEach(([groupName, rows]) => {
+          result.push(groupStats(rows, `${room} / ${groupName}`));
+        });
       });
 
-      const keys = Object.keys(통계[0]);
+      const keys = Object.keys(result[0]);
       let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
-      통계.forEach(row => {
+      result.forEach(row => {
         html += '<tr>' + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
       });
       html += '</tbody></table>';
