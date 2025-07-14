@@ -111,22 +111,24 @@
         return {
           group: name.includes("/") ? name.split(" / ")[0] : name,
           sub: name.includes("/") ? name.split(" / ")[1] : "전체",
-          "초진환자수": chartSet.length,
-          "재진환자수": sub.filter(r => reVisitCodes.includes(r[colMap.chojae])).length,
-          "총환자수": allVisits,
-          "초진 주사 처방률": chartSet.length ? Math.round((injNewPts.length / chartSet.length) * 100) + "%" : "0%",
-          "초진주사 갯수": injNewPts.length,
-          "초진 주사환자 재진율": visitCount && Object.keys(visitCount).length ? Math.round((Object.values(visitCount).filter(v => v >= 2).length / Object.keys(visitCount).length) * 100) + "%" : "0%",
-          "초진주사환자 평균 주사횟수": avgInj,
-          "초진 주사환자 평균내원횟수": avgVisitInj,
-          "초진평균내원횟수": newAvgVisit,
-          "초진 재내원율": Math.round(reVisitRatio) + "%",
-          "1회 내원 비율": visitRatio(1) + "%",
-          "2회 내원 비율": visitRatio(2) + "%",
-          "3회 내원 비율": visitRatio(3) + "%",
-          "4회 내원 비율": visitRatio(4) + "%",
-          "5회 이상 내원 비율": over5 + "%",
-          "특정 키워드 포함 메모 수": memoCount
+          ...{
+            "초진환자수": chartSet.length,
+            "재진환자수": sub.filter(r => reVisitCodes.includes(r[colMap.chojae])).length,
+            "총환자수": allVisits,
+            "초진 주사 처방률": chartSet.length ? Math.round((injNewPts.length / chartSet.length) * 100) + "%" : "0%",
+            "초진주사 갯수": injNewPts.length,
+            "초진 주사환자 재진율": visitCount && Object.keys(visitCount).length ? Math.round((Object.values(visitCount).filter(v => v >= 2).length / Object.keys(visitCount).length) * 100) + "%" : "0%",
+            "초진주사환자 평균 주사횟수": avgInj,
+            "초진 주사환자 평균내원횟수": avgVisitInj,
+            "초진평균내원횟수": newAvgVisit,
+            "초진 재내원율": Math.round(reVisitRatio) + "%",
+            "1회 내원 비율": visitRatio(1) + "%",
+            "2회 내원 비율": visitRatio(2) + "%",
+            "3회 내원 비율": visitRatio(3) + "%",
+            "4회 내원 비율": visitRatio(4) + "%",
+            "5회 이상 내원 비율": over5 + "%",
+            "특정 키워드 포함 메모 수": memoCount
+          }
         };
       }
 
@@ -160,7 +162,9 @@
         });
       });
 
-      const keys = Object.keys(result[0]).filter(k => !["group", "sub"] .includes(k));
+      const keys = Object.keys(result[0]).filter(k => !["group", "sub"]);
+      let html = '<table><thead><tr><th>구분</th><th>연령대</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+
       const grouped = {};
       result.forEach(row => {
         const g = row.group;
@@ -168,7 +172,6 @@
         grouped[g].push(row);
       });
 
-      let html = '<table><thead><tr><th>구분</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
       Object.entries(grouped).forEach(([group, rows]) => {
         rows.forEach((row, idx) => {
           const className = group.startsWith("전체") ? "whole" : group.includes("1진") ? "room1" : group.includes("2진") ? "room2" : group.includes("3진") ? "room3" : group.includes("4진") ? "room4" : group.includes("5진") ? "room5" : "";
@@ -176,6 +179,7 @@
           if (idx === 0) {
             html += `<td rowspan="${rows.length}">${group}</td>`;
           }
+          html += `<td>${row.sub}</td>`;
           html += keys.map(k => `<td>${row[k]}</td>`).join('');
           html += '</tr>';
         });
