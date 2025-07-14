@@ -9,7 +9,7 @@
     body { font-family: Arial, sans-serif; padding: 20px; max-width: 1000px; margin: auto; }
     h1 { color: #2c3e50; }
     table { border-collapse: collapse; width: 100%; margin-top: 20px; overflow-x: auto; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: middle; }
     th { background-color: #f4f4f4; }
     .warn { color: red; font-weight: bold; margin-top: 10px; }
     .input-section { margin: 20px 0; }
@@ -109,7 +109,8 @@
         const over5 = Math.round(Object.values(newVisitCounts).filter(v => v >= 5).length / Object.keys(newVisitCounts).length * 100);
 
         return {
-          "구분": name,
+          group: name.includes("/") ? name.split(" / ")[0] : name,
+          sub: name.includes("/") ? name.split(" / ")[1] : "전체",
           "초진환자수": chartSet.length,
           "재진환자수": sub.filter(r => reVisitCodes.includes(r[colMap.chojae])).length,
           "총환자수": allVisits,
@@ -159,19 +160,25 @@
         });
       });
 
-      const keys = Object.keys(result[0]);
-      let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+      const keys = Object.keys(result[0]).filter(k => !["group", "sub"] .includes(k));
+      const grouped = {};
       result.forEach(row => {
-        const group = row["구분"];
-        let className = "";
-        if (group.startsWith("전체")) className = "whole";
-        else if (group.startsWith("1진료실")) className = "room1";
-        else if (group.startsWith("2진료실")) className = "room2";
-        else if (group.startsWith("3진료실")) className = "room3";
-        else if (group.startsWith("4진료실")) className = "room4";
-        else if (group.startsWith("5진료실")) className = "room5";
+        const g = row.group;
+        if (!grouped[g]) grouped[g] = [];
+        grouped[g].push(row);
+      });
 
-        html += `<tr class="${className}">` + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
+      let html = '<table><thead><tr><th>구분</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+      Object.entries(grouped).forEach(([group, rows]) => {
+        rows.forEach((row, idx) => {
+          const className = group.startsWith("전체") ? "whole" : group.includes("1진") ? "room1" : group.includes("2진") ? "room2" : group.includes("3진") ? "room3" : group.includes("4진") ? "room4" : group.includes("5진") ? "room5" : "";
+          html += `<tr class="${className}">`;
+          if (idx === 0) {
+            html += `<td rowspan="${rows.length}">${group}</td>`;
+          }
+          html += keys.map(k => `<td>${row[k]}</td>`).join('');
+          html += '</tr>';
+        });
       });
       html += '</tbody></table>';
       document.getElementById('output').innerHTML = html;
