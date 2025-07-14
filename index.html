@@ -13,6 +13,12 @@
     th { background-color: #f4f4f4; }
     .warn { color: red; font-weight: bold; margin-top: 10px; }
     .input-section { margin: 20px 0; }
+    tbody tr.whole { background-color: #eaf2f8; }
+    tbody tr.room1 { background-color: #fef9e7; }
+    tbody tr.room2 { background-color: #e8f8f5; }
+    tbody tr.room3 { background-color: #fbeee6; }
+    tbody tr.room4 { background-color: #f9ebea; }
+    tbody tr.room5 { background-color: #f5eef8; }
   </style>
 </head>
 <body>
@@ -26,33 +32,6 @@
   <div id="warning" class="warn"></div>
 
   <script>
-    document.getElementById('fileInput').addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      const keyword = document.getElementById('keywordInput').value.trim().toLowerCase();
-      const reader = new FileReader();
-      const isCSV = file.name.endsWith('.csv');
-
-      reader.onload = function(e) {
-        let rawData = [];
-        if (isCSV) {
-          const csv = e.target.result;
-          const rows = csv.split(/\r?\n/).map(row => row.split(','));
-          rawData = rows;
-          process(rawData, keyword);
-        } else {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          workbook.SheetNames.forEach(sheet => {
-            const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheet], { header: 1, defval: "" });
-            rawData = rawData.concat(sheetData);
-          });
-          process(rawData, keyword);
-        }
-      };
-      if (isCSV) reader.readAsText(file);
-      else reader.readAsArrayBuffer(file);
-    });
-
     function getAgeFromSA(sa) {
       const match = sa.match(/\/(\d{1,2})\uC138/);
       return match ? parseInt(match[1]) : null;
@@ -150,7 +129,19 @@
         };
       }
 
-      let result = [groupStats(df, "전체")];
+      let result = [];
+      result.push(groupStats(df, "전체"));
+      const allAgeGroups = {};
+      df.forEach(r => {
+        const age = getAgeFromSA(r[colMap.sa]);
+        const group = getAgeGroup(age);
+        if (!allAgeGroups[group]) allAgeGroups[group] = [];
+        allAgeGroups[group].push(r);
+      });
+      Object.entries(allAgeGroups).forEach(([groupName, rows]) => {
+        result.push(groupStats(rows, `전체 / ${groupName}`));
+      });
+
       rooms.forEach(room => {
         const filtered = df.filter(r => r[colMap.dept] === room);
         result.push(groupStats(filtered, room));
@@ -171,11 +162,47 @@
       const keys = Object.keys(result[0]);
       let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
       result.forEach(row => {
-        html += '<tr>' + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
+        const group = row["구분"];
+        let className = "";
+        if (group.startsWith("전체")) className = "whole";
+        else if (group.startsWith("1진료실")) className = "room1";
+        else if (group.startsWith("2진료실")) className = "room2";
+        else if (group.startsWith("3진료실")) className = "room3";
+        else if (group.startsWith("4진료실")) className = "room4";
+        else if (group.startsWith("5진료실")) className = "room5";
+
+        html += `<tr class="${className}">` + keys.map(k => `<td>${row[k]}</td>`).join('') + '</tr>';
       });
       html += '</tbody></table>';
       document.getElementById('output').innerHTML = html;
     }
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const keyword = document.getElementById('keywordInput').value.trim().toLowerCase();
+      const reader = new FileReader();
+      const isCSV = file.name.endsWith('.csv');
+
+      reader.onload = function(e) {
+        let rawData = [];
+        if (isCSV) {
+          const csv = e.target.result;
+          const rows = csv.split(/\r?\n/).map(row => row.split(','));
+          rawData = rows;
+          process(rawData, keyword);
+        } else {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          workbook.SheetNames.forEach(sheet => {
+            const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheet], { header: 1, defval: "" });
+            rawData = rawData.concat(sheetData);
+          });
+          process(rawData, keyword);
+        }
+      };
+      if (isCSV) reader.readAsText(file);
+      else reader.readAsArrayBuffer(file);
+    });
   </script>
 </body>
 </html>
