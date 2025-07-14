@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>/비트/외래 통계 자동 계산 도구</title>
+  <title>/비트/ ETC.통계 자동 계산 도구</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h1>/비트/외래 통계 자동 계산기</h1>
+  <h1>/비트/ ETC.통계 자동 계산기</h1>
   <div class="input-section">
     <label>✔️ 특정 키워드(예: PT만)를 입력하세요:</label><br>
     <input type="text" id="keywordInput" placeholder="예: PT만" style="width: 200px; margin-top: 5px;" />
@@ -34,13 +34,20 @@
   <script>
     const AGE_ORDER = ["0~10대", "20대", "30대", "40대", "50대~64세", "65세이상", "전체"];
 
+    function getAgeGroup(ageStr) {
+      const age = parseInt(ageStr);
+      if (isNaN(age)) return "전체";
+      if (age <= 19) return "0~10대";
+      if (age <= 29) return "20대";
+      if (age <= 39) return "30대";
+      if (age <= 49) return "40대";
+      if (age <= 64) return "50대~64세";
+      return "65세이상";
+    }
+
     function sortResult(a, b) {
-      const aGroup = a["구분"];
-      const bGroup = b["구분"];
-      if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
-      const aAge = a["연령대"];
-      const bAge = b["연령대"];
-      return AGE_ORDER.indexOf(aAge) - AGE_ORDER.indexOf(bAge);
+      if (a["구분"] !== b["구분"]) return a["구분"].localeCompare(b["구분"]);
+      return AGE_ORDER.indexOf(a["연령대"]) - AGE_ORDER.indexOf(b["연령대"]);
     }
 
     function renderTable(result) {
@@ -58,7 +65,7 @@
         groupRows[row["구분"]] = (groupRows[row["구분"]] || 0) + 1;
       });
 
-      result.forEach((row) => {
+      result.forEach(row => {
         const className = row["구분"].startsWith("전체") ? "whole" :
                           row["구분"].startsWith("1진료실") ? "room1" :
                           row["구분"].startsWith("2진료실") ? "room2" :
@@ -90,7 +97,6 @@
           const csv = e.target.result;
           const rows = csv.split(/\r?\n/).map(row => row.split(','));
           rawData = rows;
-          process(rawData, keyword);
         } else {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
@@ -98,12 +104,104 @@
             const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheet], { header: 1, defval: "" });
             rawData = rawData.concat(sheetData);
           });
-          process(rawData, keyword);
         }
+        process(rawData, keyword);
       };
       if (isCSV) reader.readAsText(file);
       else reader.readAsArrayBuffer(file);
     });
+
+    function process(data, keyword) {
+      const headerIdx = data.findIndex(r => r.join('').includes("초/재") || r.join('').includes("챠트") || r.join('').includes("진료과"));
+      if (headerIdx === -1) return;
+
+      const headers = data[headerIdx];
+      const rows = data.slice(headerIdx + 1).filter(r => r.length > 1);
+
+      const result = [];
+      const df = rows.map(r => Object.fromEntries(headers.map((h, i) => [h.trim(), r[i] || ""])));
+
+      const map = {};
+      headers.forEach(h => {
+        const l = h.toLowerCase();
+        if (l.includes("초") && l.includes("재")) map['초재'] = h;
+        else if (l.includes("차트") || l.includes("챠트") || l.includes("id")) map['차트'] = h;
+        else if (l.includes("과")) map['과'] = h;
+        else if (l.includes("마취")) map['마취'] = h;
+        else if (l.includes("메모")) map['메모'] = h;
+        else if (l.includes("나이") || l.includes("연령") || l.includes("생년")) map['연령'] = h;
+      });
+
+      const 재진조건 = ["재진", "물리치료내원", "진찰료 산정안함"];
+
+      const makeStat = (list, title, ageGroup = "전체") => {
+        const 초진 = list.filter(r => ["신환", "90일초진"].includes(r[map['초재']]));
+        const 초진차트 = [...new Set(초진.map(r => r[map['차트']]))];
+        const 총 = list.length;
+        const 재진 = list.filter(r => 재진조건.includes(r[map['초재']])).length;
+        const 주사 = 초진.filter(r => (r[map['마취']] || '').includes('●'));
+        const 주사차트 = [...new Set(주사.map(r => r[map['차트']]))];
+        const 주사기록 = list.filter(r => 주사차트.includes(r[map['차트']]));
+
+        const 주사횟수 = {}, 내원횟수 = {};
+        주사기록.forEach(r => {
+          const id = r[map['차트']];
+          if ((r[map['마취']] || '').includes('●')) 주사횟수[id] = (주사횟수[id] || 0) + 1;
+          내원횟수[id] = (내원횟수[id] || 0) + 1;
+        });
+
+        const 평균주사 = Object.keys(주사횟수).length ? (Object.values(주사횟수).reduce((a,b)=>a+b,0)/Object.keys(주사횟수).length).toFixed(1) : 0;
+        const 평균내원 = Object.keys(내원횟수).length ? (Object.values(내원횟수).reduce((a,b)=>a+b,0)/Object.keys(내원횟수).length).toFixed(1) : 0;
+
+        const 초진기록 = list.filter(r => 초진차트.includes(r[map['차트']]));
+        const 초진내원 = {};
+        초진기록.forEach(r => {
+          const id = r[map['차트']];
+          초진내원[id] = (초진내원[id] || 0) + 1;
+        });
+        const 평균초진내원 = Object.keys(초진내원).length ? (Object.values(초진내원).reduce((a,b)=>a+b,0)/Object.keys(초진내원).length).toFixed(1) : 0;
+        const 재내원율 = Object.values(초진내원).filter(v => v >= 2).length;
+
+        const 내원비율 = (n) => Math.round((Object.values(초진내원).filter(v => v === n).length / Object.keys(초진내원).length) * 100);
+        const 내원5이상 = Math.round((Object.values(초진내원).filter(v => v >= 5).length / Object.keys(초진내원).length) * 100);
+
+        const 키워드수 = map['메모'] && keyword ? list.filter(r => (r[map['메모']] || '').toLowerCase().includes(keyword)).length : "";
+
+        result.push({
+          "구분": title,
+          "연령대": ageGroup,
+          "초진환자수": 초진차트.length,
+          "재진환자수": 재진,
+          "총환자수": 총,
+          "초진 주사 처방률": `${초진차트.length ? Math.round((주사.length/초진차트.length)*100) : 0}%`,
+          "초진주사 갯수": 주사.length,
+          "초진 주사환자 재진율": `${Math.round((Object.values(내원횟수).filter(v => v >= 2).length/Object.keys(내원횟수).length)*100)||0}%`,
+          "초진주사환자 평균 주사횟수": 평균주사,
+          "초진 주사환자 평균내원횟수": 평균내원,
+          "초진평균내원횟수": 평균초진내원,
+          "초진 재내원율": `${초진차트.length ? Math.round((재내원율/초진차트.length)*100):0}%`,
+          "1회 내원 비율": `${내원비율(1)}%`,
+          "2회 내원 비율": `${내원비율(2)}%`,
+          "3회 내원 비율": `${내원비율(3)}%`,
+          "4회 내원 비율": `${내원비율(4)}%`,
+          "5회 이상 내원 비율": `${내원5이상}%`,
+          "특정 키워드 포함 메모 수": 키워드수
+        });
+      };
+
+      const 전체 = df;
+      AGE_ORDER.slice(0, -1).forEach(a => makeStat(전체.filter(r => getAgeGroup(r[map['연령']]) === a), "전체", a));
+      makeStat(전체, "전체", "전체");
+
+      const 진료과들 = [...new Set(df.map(r => r[map['과']]))];
+      진료과들.forEach(과 => {
+        const 대상 = df.filter(r => r[map['과']] === 과);
+        AGE_ORDER.slice(0, -1).forEach(a => makeStat(대상.filter(r => getAgeGroup(r[map['연령']]) === a), 과, a));
+        makeStat(대상, 과, "전체");
+      });
+
+      renderTable(result);
+    }
   </script>
 </body>
 </html>
