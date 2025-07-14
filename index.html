@@ -155,7 +155,6 @@
         };
       };
 
-      const groupMap = {};
       const globalGroups = {};
       df.forEach(r => {
         const age = getAgeFromSA(r[colMap.sa]);
@@ -186,18 +185,21 @@
         });
       });
 
-      // ✅ 연령대 정렬 순서 적용
-      const ageOrder = ["0~10대", "20대", "30대", "40대", "50대~64세", "65세이상", "미확인"];
+      // ✅ 정렬 순서 반영
+      const ageOrder = ["0~10대", "20대", "30대", "40대", "50대~64세", "65세이상"];
       const groupPriority = row => {
-        const groupOrder = {
-          "전체": 0,
-          "1진료실": 1,
-          "2진료실": 2,
-          "3진료실": 3,
-          "4진료실": 4,
-          "5진료실": 5,
+        if (row["구분"] === "전체" && row["연령대"] === "전체") return 0;
+        if (row["구분"] === "전체") return ageOrder.indexOf(row["연령대"]) + 1;
+        const deptOrder = {
+          "1진료실": 10,
+          "2진료실": 20,
+          "3진료실": 30,
+          "4진료실": 40,
+          "5진료실": 50
         };
-        return (groupOrder[row["구분"]] ?? 999) * 100 + (ageOrder.indexOf(row["연령대"]) !== -1 ? ageOrder.indexOf(row["연령대"]) : 99);
+        const base = deptOrder[row["구분"]] || 99;
+        const ageIndex = row["연령대"] === "전체" ? 0 : (ageOrder.indexOf(row["연령대"]) + 1 || 99);
+        return base + ageIndex;
       };
       result.sort((a, b) => groupPriority(a) - groupPriority(b));
 
